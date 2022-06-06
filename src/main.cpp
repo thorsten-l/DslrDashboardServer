@@ -6,13 +6,13 @@
  */
 
 #include "main.h"
-
+#include "logdef.h"
 
 using namespace std;
 
 int main() {
 
-	syslog(LOG_INFO, "DslrDashboardServer starting"); // prints DslrDashboardServer
+	LOGINFO("DslrDashboardServer starting"); // prints DslrDashboardServer
 
 //	if (fork() == 0)
 //		startUdpListener();
@@ -21,7 +21,7 @@ int main() {
 	int r = pthread_create(&myThread, nullptr, udpThread, nullptr);
 
 	if (r)
-		syslog(LOG_ERR, "error creating client thread");
+		LOGERR( "error creating client thread");
 
 	startSocketServer(TCP_PORT);
 
@@ -44,13 +44,13 @@ int createUdpSocket()
 	LocalHost.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if ((UDPsocket = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-		syslog(LOG_ERR, "can't create UDP socket: %d", UDPsocket);
+		LOGERR( "can't create UDP socket: %d", UDPsocket);
 		return -1;
 	}
 	reusePort(UDPsocket);
 
 	if (bind(UDPsocket, (SA *) & LocalHost, sizeof(LocalHost)) < 0) {
-		syslog(LOG_ERR, "Error binding UDP socket");
+		LOGERR( "Error binding UDP socket");
 		close(UDPsocket);
 		return -1;
 	}
@@ -59,7 +59,7 @@ int createUdpSocket()
 }
 void startUdpListener() {
 
-	syslog(LOG_INFO, "Starting UDP listener");
+	LOGINFO( "Starting UDP listener");
 
 //	struct sockaddr_in LocalHost;
 	int             UDPsocket;
@@ -75,20 +75,20 @@ void startUdpListener() {
 	GroupAddress.sin_addr.s_addr = inet_addr(UDP_GROUP);
 //
 //	if ((UDPsocket = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-//		syslog(LOG_ERR, "can't create UDP socket: %d", UDPsocket);
+//		LOGERR( "can't create UDP socket: %d", UDPsocket);
 //		exit(-1);
 //	}
 //	reusePort(UDPsocket);
 //
 //	if (bind(UDPsocket, (SA *) & LocalHost, sizeof(LocalHost)) < 0) {
 //
-//		syslog(LOG_ERR, "Error binding UDP socket");
+//		LOGERR( "Error binding UDP socket");
 //
 //		exit(-1);
 //	}
 
 	while ((UDPsocket = createUdpSocket()) < 0) {
-		syslog(LOG_INFO, "Error creating UDP socket, retry after 3 seconds");
+		LOGINFO( "Error creating UDP socket, retry after 3 seconds");
 		sleep(3);
 	}
 	joinGroup(UDPsocket, (char *)UDP_GROUP);
@@ -106,7 +106,7 @@ void startUdpListener() {
 	const int				on = 1;
 	if (setsockopt(UDPsocket, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on)) < 0){
 		//printf("Error settings IP_PKTINFO");
-		syslog(LOG_ERR, "Error settings IP_PKTINFO");
+		LOGERR( "Error settings IP_PKTINFO");
 	}
 
 	ssize_t             bytes = 0;
@@ -134,19 +134,19 @@ void startUdpListener() {
 
 		if (bytes > 0) {
 
-			syslog(LOG_INFO, "recv: %ld", bytes);
+			LOGINFO( "recv: %ld", bytes);
 
 			int diff = strncmp(&recvBuf[0], DD_CLIENT, sizeof(DD_CLIENT)-1);
 			if (diff == 0)
 			{
-				syslog(LOG_INFO, "Client multicast query %s", recvBuf);
+				LOGINFO( "Client multicast query %s", recvBuf);
 				int len = sizeof(DD_SERVER) - 1 + bytes - (sizeof(DD_CLIENT) -1);
 				char *buf = (char *)malloc(len);
 				strncpy(buf, DD_SERVER, sizeof(DD_SERVER)-1);
 				strncpy(&buf[sizeof(DD_SERVER)-1], &recvBuf[sizeof(DD_CLIENT)-1], bytes-(sizeof(DD_CLIENT) - 1));
-				syslog(LOG_INFO, "Server message length: %d   msg: %s",len, buf);
+				LOGINFO( "Server message length: %d   msg: %s",len, buf);
 				if (sendto(UDPsocket, buf, len, 0, (SA *) & GroupAddress, sizeof(GroupAddress)) < 0) {
-						syslog(LOG_ERR, "Error sending multicast response");
+						LOGERR( "Error sending multicast response");
 						exit(-1);
 				}
 
@@ -168,7 +168,7 @@ void startUdpListener() {
 //				// pi->ipi_spec_dst is the destination in_addr
 //				// pi->ipi_addr is the receiving interface in_addr
 //
-//				syslog(LOG_INFO,"tst %s %d %s", inet_ntoa(pi->ipi_addr), pi->ipi_ifindex, inet_ntoa(pi->ipi_spec_dst));
+//				LOGINFO("tst %s %d %s", inet_ntoa(pi->ipi_addr), pi->ipi_ifindex, inet_ntoa(pi->ipi_spec_dst));
 //
 //				write(1, recvBuf, bytes);
 //			}
@@ -181,10 +181,10 @@ void startUdpListener() {
 //		bytes = recv(UDPsocket, recvBuf, MAX_LEN, 0);
 //		//printf("intf %d %d", pktinfo.ipi_ifindex, pktinfo.ipi_addr);
 //
-//		syslog(LOG_INFO, "intf %d %d", pktinfo.ipi_ifindex, pktinfo.ipi_addr);
+//		LOGINFO( "intf %d %d", pktinfo.ipi_ifindex, pktinfo.ipi_addr);
 //
 //		if (bytes < 0) {
-//			syslog(LOG_ERR, "error in reading from multicast socket");
+//			LOGERR( "error in reading from multicast socket");
 //			exit(-1);
 //		}
 ///*
@@ -192,9 +192,9 @@ void startUdpListener() {
 //			printf("zero bytes read\n");
 //*/
 //		else {		/* print the message to STDOUT */
-//			syslog(LOG_INFO, "message: %s", recvBuf);
+//			LOGINFO( "message: %s", recvBuf);
 //			if (write(1, recvBuf, bytes) < 0) {
-//				syslog(LOG_ERR, "error in write to STDOUT ");
+//				LOGERR( "error in write to STDOUT ");
 //				exit(-1);
 //			}
 //
@@ -213,12 +213,12 @@ void startSocketServer(int port) {
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;
 
-	syslog(LOG_INFO, "Starting socket server on port %d", port);
+	LOGINFO( "Starting socket server on port %d", port);
 
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (sockfd < 0) {
-		syslog(LOG_ERR, "ERROR opening socket: %d", sockfd);
+		LOGERR( "ERROR opening socket: %d", sockfd);
 		return;
 	}
 
@@ -229,7 +229,7 @@ void startSocketServer(int port) {
 	serv_addr.sin_port = htons(port);
 
 	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-		syslog(LOG_ERR, "ERROR on binding");
+		LOGERR( "ERROR on binding");
 		return;
 	}
 	listen(sockfd, 5);
@@ -237,22 +237,22 @@ void startSocketServer(int port) {
 	clilen = sizeof(cli_addr);
 
 	while (true) {
-		syslog(LOG_INFO, "Awaiting client connection");
+		LOGINFO( "Awaiting client connection");
 		clientSocket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 		if (clientSocket < 0) {
-			syslog(LOG_ERR, "Error on accept client connection %d", clientSocket);
+			LOGERR( "Error on accept client connection %d", clientSocket);
 		} else {
-			syslog(LOG_INFO, "Incoming client connection");
+			LOGINFO( "Incoming client connection");
 
 			pthread_t myThread;
 
 			int r = pthread_create(&myThread, nullptr, clientThread, &clientSocket);
 
 			if (r)
-				syslog(LOG_ERR, "error creating client thread");
+				LOGERR( "error creating client thread");
 			// close client socket
 //			close(clientSocket);
-//			syslog(LOG_INFO, "Client finished");
+//			LOGINFO( "Client finished");
 		}
 	}
 }
@@ -273,12 +273,12 @@ void * clientThread(void * param) {
 
 void joinGroup(int s, char *group)
 {
-	syslog(LOG_INFO, "join multicast group: %s", group);
+	LOGINFO( "join multicast group: %s", group);
 	struct sockaddr_in groupStruct;
 	struct ip_mreq  mreq;	/* multicast group info structure */
 
 	if ((groupStruct.sin_addr.s_addr = inet_addr(group)) == -1)
-		syslog(LOG_ERR, "error in inet_addr");
+		LOGERR( "error in inet_addr");
 
 	/* check if group address is indeed a Class D address */
 	mreq.imr_multiaddr = groupStruct.sin_addr;
@@ -286,7 +286,7 @@ void joinGroup(int s, char *group)
 
 	int r = setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof(mreq));
 	if ( r < 0) {
-		syslog(LOG_ERR, "error in joining multicast group %d", r);
+		LOGERR( "error in joining multicast group %d", r);
 	}
 }
 
@@ -300,16 +300,16 @@ void leaveGroup(int recvSock, char *group)
 	struct ip_mreq  dreq;	/* multicast group info structure */
 
 	if ((groupStruct.sin_addr.s_addr = inet_addr(group)) == -1)
-		syslog(LOG_ERR, "error in inet_addr");
+		LOGERR( "error in inet_addr");
 
 	dreq.imr_multiaddr = groupStruct.sin_addr;
 	dreq.imr_interface.s_addr = INADDR_ANY;
 
 	if (setsockopt(recvSock, IPPROTO_IP, IP_DROP_MEMBERSHIP,
 		       (char *) &dreq, sizeof(dreq)) == -1) {
-		syslog(LOG_ERR, "error in leaving multicast group");
+		LOGERR( "error in leaving multicast group");
 	}
-	syslog(LOG_INFO, "process quitting multicast group %s ", group);
+	LOGINFO( "process quitting multicast group %s ", group);
 }
 
 
@@ -323,7 +323,7 @@ void reusePort(int s)
 	int             one = 1;
 
 	if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *) &one, sizeof(one)) == -1) {
-		syslog(LOG_ERR, "error in setsockopt,SO_REUSEPORT");
+		LOGERR( "error in setsockopt,SO_REUSEPORT");
 	}
 }
 
@@ -335,7 +335,7 @@ void setTTLvalue(int s, u_char * ttl_value)
 {
 	if (setsockopt(s, IPPROTO_IP, IP_MULTICAST_TTL, (char *) ttl_value,
 		       sizeof(u_char)) == -1) {
-		syslog(LOG_ERR, "error in setting multicast TTL value");
+		LOGERR( "error in setting multicast TTL value");
 	}
 }
 
@@ -349,7 +349,7 @@ void setLoopback(int s, u_char loop)
 {
 	if (setsockopt(s, IPPROTO_IP, IP_MULTICAST_LOOP, (char *) &loop,
 		       sizeof(u_char)) == -1) {
-		syslog(LOG_ERR, "error in disabling loopback");
+		LOGERR( "error in disabling loopback");
 	}
 }
 

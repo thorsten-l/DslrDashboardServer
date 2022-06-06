@@ -6,6 +6,7 @@
  */
 
 #include "communicator.h"
+#include "logdef.h"
 
 Communicator::Communicator() : mSocket(0), mCtx(nullptr), //mIsInitialized(false), mIsUsbInitialized(false),
 							   mHandle(nullptr), mDevice(nullptr), mImagingInterface(-1),
@@ -15,7 +16,7 @@ Communicator::Communicator() : mSocket(0), mCtx(nullptr), //mIsInitialized(false
 	if (r == 0)
 		libusb_set_debug(mCtx, 0); //set verbosity level to 3, as suggested in the documentation
 	else
-		syslog(LOG_ERR, "Error initializing libusb %d", r);
+		LOGERR( "Error initializing libusb %d", r);
 
 }
 
@@ -50,21 +51,21 @@ void Communicator::handleClientConnection(int socket)
 	timeout.tv_usec = 0;
 
 	if (setsockopt (mSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
-	        syslog(LOG_ERR, "RCVTIMEO setsockopt failed");
+	        LOGERR( "RCVTIMEO setsockopt failed");
 
 	if (setsockopt (mSocket, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
-	        syslog(LOG_ERR, "SNDTIMEO setsockopt failed");
+	        LOGERR( "SNDTIMEO setsockopt failed");
 //	if (setsockopt (mSocket, SOL_SOCKET, TCP_USER_TIMEOUT, &keep_alive, sizeof(int)) < 0 )
-//		 syslog(LOG_ERR, "KEEPALIVE setsockopt failed");
+//		 LOGERR( "KEEPALIVE setsockopt failed");
 	if (setsockopt(mSocket, SOL_SOCKET, SO_KEEPALIVE, &keep_alive, sizeof(int)) < 0)
-		syslog(LOG_ERR, "KEEPALIVE setsockopt failed");
+		LOGERR( "KEEPALIVE setsockopt failed");
 
 	// send welcome message
 	sendWelcomeMessage();
 
 	while(true) {
 		if (!readFromClient()) {
-			syslog(LOG_ERR, "Stoping client");
+			LOGERR( "Stoping client");
 			break;
 		}
 	}
@@ -101,7 +102,7 @@ bool Communicator::readFromClient()
 
 	if (r == 4) {
 		packetSize = le32toh(packetSize);
-		//syslog(LOG_INFO, "incoming packet size: %d", packetSize);
+		//LOGINFO( "incoming packet size: %d", packetSize);
 
 		uint8_t *buf = (uint8_t *) malloc(packetSize - 4);
 
@@ -111,12 +112,12 @@ bool Communicator::readFromClient()
 			result = processPacket(buf, packetSize - 4);
 		}
 		else
-			syslog(LOG_ERR, "Error reading packet : %ld", r);
+			LOGERR( "Error reading packet : %ld", r);
 
 		free(buf);
 
 	} else
-		syslog(LOG_ERR, "Error reading total packet size: %ld", r);
+		LOGERR( "Error reading total packet size: %ld", r);
 
 
 
@@ -156,7 +157,7 @@ int Communicator::sendBuffer(uint8_t *buf, int size)
 {
 	int r = write(mSocket, buf, size);
 	if (r != size)
-		syslog(LOG_ERR, "Error sending packet to client");
+		LOGERR( "Error sending packet to client");
 	return r;
 }
 
@@ -174,8 +175,8 @@ void Communicator::initiateUsbConnection(uint32_t vendorId, uint32_t productId, 
 		setPtpHeader(buf, 4, PTP_HEADER + 4 , 0x0002, 0x0001, sessionId);
 		*(uint16_t *)&buf[4 + PTP_HEADER] = htole16(mVendorId);
 		*(uint16_t *)&buf[4 + PTP_HEADER + 2] = htole16(mProductId);
-		syslog(LOG_INFO, "vendor: %d product: %d", mVendorId, mProductId);
-		syslog(LOG_INFO, "vendor: %d product: %d", htole16(mVendorId), htole16(mProductId));
+		LOGINFO( "vendor: %d product: %d", mVendorId, mProductId);
+		LOGINFO( "vendor: %d product: %d", htole16(mVendorId), htole16(mProductId));
 
 		setPtpHeader(buf, 4 + PTP_HEADER + 4, PTP_HEADER , 0x0003, 0x2001, sessionId);
 
@@ -188,7 +189,7 @@ void Communicator::initiateUsbConnection(uint32_t vendorId, uint32_t productId, 
 
 bool Communicator::processPacket(uint8_t *buf, int size)
 {
-	//syslog(LOG_INFO, "processing incoming packet");
+	//LOGINFO( "processing incoming packet");
 	PtpPacket *header = (PtpPacket *)&buf[0];
 
 	// device selector command, if initialized then ignore
@@ -232,7 +233,7 @@ bool Communicator::processPacket(uint8_t *buf, int size)
 			sendResponsePacket(0x2003, le32toh(header->session_ID));
 			return true;
 		} else {
-//	                syslog(LOG_INFO, "interrupt packet request");
+//	                LOGINFO( "interrupt packet request");
 			if (!handleIncomingUsbPtpPacket(true))
 				sendResponsePacket(0x2003, le32toh(header->session_ID));
 			return true;
@@ -262,59 +263,59 @@ bool Communicator::processUsbPacket(uint8_t * buf, int size)
 	// is Nikon set application mode
 	bool isNikon = mVendorId == 0x04b0 && le16toh(header->packet_command) == 0x1016 && packetSize >= 16 && *(uint32_t *)&buf[12] == htole32(0xd1f0);
 	if (isNikon)
-		syslog(LOG_INFO, "Nikon set application mode command");
-//	syslog(LOG_INFO, "sending packet to USB device");
+		LOGINFO( "Nikon set application mode command");
+//	LOGINFO( "sending packet to USB device");
 
 	int r = libusb_bulk_transfer(mHandle, mWriteEndpoint, &buf[0], packetSize, &writen, 4000);
-//	syslog(LOG_INFO, "packet size: %d  writen to USB: %d", packetSize, writen);
+//	LOGINFO( "packet size: %d  writen to USB: %d", packetSize, writen);
 	if (r == 0) {
 		if (writen != packetSize)
-			syslog(LOG_ERR, "Command Packet size was: %d  writen: %d", packetSize, writen);
+			LOGERR( "Command Packet size was: %d  writen: %d", packetSize, writen);
 		if (size > packetSize) {
-//			syslog(LOG_INFO, "sending PTP data packet");
+//			LOGINFO( "sending PTP data packet");
 			// there is a data packet, write
 			header = (PtpPacket *)&buf[packetSize];
 			r = libusb_bulk_transfer(mHandle, mWriteEndpoint, &buf[packetSize], le32toh(header->packet_len), &writen, 4000);
 			if (r == 0) {
 				if (writen != le32toh(header->packet_len))
-					syslog(LOG_ERR, "Command data Packet size was: %d  writen: %d", le32toh(header->packet_len), writen);
+					LOGERR( "Command data Packet size was: %d  writen: %d", le32toh(header->packet_len), writen);
 
                                 if (isNikon)
                                 {
                                     uint8_t *buf;// = (uint8_t *)malloc(512);
                                     int read = 0;
                                     buf = readUsbPacket(read, true,200);
-                                    syslog(LOG_INFO, "Nikon read first interrupt %d", read);
+                                    LOGINFO( "Nikon read first interrupt %d", read);
                                     if (buf != nullptr)
                                         free(buf);
                                     buf = readUsbPacket(read, true,200);
-                                    syslog(LOG_INFO, "Nikon read second interrupt %d", read);
+                                    LOGINFO( "Nikon read second interrupt %d", read);
                                     if (buf != nullptr)
                                         free(buf);
                                     buf = readUsbPacket(read, true,200);
-                                    syslog(LOG_INFO, "Nikon read third interrupt %d", read);
+                                    LOGINFO( "Nikon read third interrupt %d", read);
                                     if (buf != nullptr)
                                         free(buf);
 
 /*
                                     if (readPtpPacket(buf, 512, read, true))
-                                        syslog(LOG_INFO, "Nikon read first interrupt %d", read);
+                                        LOGINFO( "Nikon read first interrupt %d", read);
                                     if (readPtpPacket(buf, 512, read, true))
-                                        syslog(LOG_INFO, "Nikon read first interrupt %d", read);
+                                        LOGINFO( "Nikon read first interrupt %d", read);
                                     if (readPtpPacket(buf, 512, read, true))
-                                        syslog(LOG_INFO, "Nikon read first interrupt %d", read);
+                                        LOGINFO( "Nikon read first interrupt %d", read);
 */
                                 }
 				result = handleIncomingUsbPtpPacket();
 			}
 			else
-				syslog(LOG_ERR, "Error command data packet USB bulk write: %d", r);
+				LOGERR( "Error command data packet USB bulk write: %d", r);
 		}
 		else
 			result = handleIncomingUsbPtpPacket();
 	}
 	else
-		syslog(LOG_ERR, "Error command packet USB bulk write: %d", r);
+		LOGERR( "Error command packet USB bulk write: %d", r);
 	return result;
 }
 
@@ -357,12 +358,12 @@ uint8_t * Communicator::readUsbPacket(int &length, bool isInterrupt, unsigned in
             offset += readBytes;
             totalRead += readBytes;
             if (isInterrupt)
-                syslog(LOG_INFO, "interrupt run: %d totalRead: %d  offset: %d   readBytes: %d", runNo, totalRead, offset, readBytes);
+                LOGINFO( "interrupt run: %d totalRead: %d  offset: %d   readBytes: %d", runNo, totalRead, offset, readBytes);
             if (totalRead >= 4) {
                 ptpPacket = (PtpPacket *)&buf[4];
                 packetSize1 = ptpPacket->packet_len;
                 if (isInterrupt)
-                    syslog(LOG_INFO, "interrupt run: %d packetSize1: %d", runNo, packetSize1);
+                    LOGINFO( "interrupt run: %d packetSize1: %d", runNo, packetSize1);
                 if (packetSize1 > currentPacketSize - 4) {
                     currentPacketSize = 4 + packetSize1 + 4096;
                     buf = (uint8_t *)realloc(buf, currentPacketSize);
@@ -408,7 +409,7 @@ uint8_t * Communicator::readUsbPacket(int &length, bool isInterrupt, unsigned in
         totalRead += readBytes;
         offset += readBytes;
 		if (isInterrupt)
-            syslog(LOG_INFO, "first currentPacketSize: %d  offset: %d   readBytes: %d", currentPacketSize, offset, readBytes);
+            LOGINFO( "first currentPacketSize: %d  offset: %d   readBytes: %d", currentPacketSize, offset, readBytes);
 
         if (readBytes >= 4) {
             ptpPacket = (PtpPacket *)&buf[4];
@@ -421,7 +422,7 @@ uint8_t * Communicator::readUsbPacket(int &length, bool isInterrupt, unsigned in
                 if (readPtpPacket(&buf[offset], packetSize1 - totalRead, readBytes, isInterrupt)) {
                     totalRead += readBytes;
                     offset += readBytes;
-                    syslog(LOG_INFO, "additional read packetSize: %d totalRead: %d  offset: %d   readBytes: %d", packetSize1, totalRead, offset, readBytes);
+                    LOGINFO( "additional read packetSize: %d totalRead: %d  offset: %d   readBytes: %d", packetSize1, totalRead, offset, readBytes);
                 }
                 else
                     break;
@@ -456,10 +457,10 @@ uint8_t * Communicator::readUsbPacket(int &length, bool isInterrupt, unsigned in
 		/*
 		if (isInterrupt && readBytes ==8) {
 			if (readPtpPacket(&buf[offset+readBytes], currentPacketSize - offset - readBytes, readBytes, isInterrupt)) {
-				syslog(LOG_INFO, "second interrupt read success");
+				LOGINFO( "second interrupt read success");
 			}
 			else
-				syslog(LOG_INFO, "second interrupt read failed");
+				LOGINFO( "second interrupt read failed");
 		}
 		*/
         /*
@@ -469,7 +470,7 @@ uint8_t * Communicator::readUsbPacket(int &length, bool isInterrupt, unsigned in
 			buf = (uint8_t *)realloc(buf, currentPacketSize);
 			if (readPtpPacket(&buf[offset], packetSize1 - (offset-4 ), readBytes, isInterrupt)) {
                 if (isInterrupt)
-                    syslog(LOG_INFO, "second packetSize1: %d currentPacketSize: %d  offset: %d   readBytes: %d", packetSize1, currentPacketSize, offset, readBytes);
+                    LOGINFO( "second packetSize1: %d currentPacketSize: %d  offset: %d   readBytes: %d", packetSize1, currentPacketSize, offset, readBytes);
 			}
 			else
 				resume = false;
@@ -482,32 +483,32 @@ uint8_t * Communicator::readUsbPacket(int &length, bool isInterrupt, unsigned in
 			if (!isResponse) {
 				// read in the respone
 				offset = 4 + packetSize1;
-//				syslog(LOG_INFO, "first was data, read response currentPacketSize: %d  offset: %d", currentPacketSize, offset);
+//				LOGINFO( "first was data, read response currentPacketSize: %d  offset: %d", currentPacketSize, offset);
 
 				// ensure there is enough for response packet - 128 bytes should be enough
 				if (currentPacketSize < (offset + 128)) {
-//					syslog(LOG_INFO, "Packet increased for response packet");
+//					LOGINFO( "Packet increased for response packet");
 					currentPacketSize = offset + 128;
 					buf = (uint8_t *)realloc(buf, currentPacketSize);
 				}
 //				if (readPtpPacket(&buf[offset], currentPacketSize - offset, readBytes))
 //				{
-//					syslog(LOG_INFO, "Response packet read bytes: %d", readBytes);
+//					LOGINFO( "Response packet read bytes: %d", readBytes);
 //					// set final total packet size
 //					*(uint32_t *)&buf[0] = htole32(offset + readBytes);
 //					return buf;
 //				}
 //				else
-//					syslog(LOG_ERR, "Error reading rest of the response packet");
+//					LOGERR( "Error reading rest of the response packet");
 
 				if (readPtpPacket(&buf[offset], currentPacketSize - packetSize1 - 4, readBytes)) {
-//					syslog(LOG_INFO, "response packet load");
+//					LOGINFO( "response packet load");
 
 					ptpPacket = (PtpPacket *)&buf[offset];
 					packetSize2 = le32toh(ptpPacket->packet_len);
 
 					if (packetSize2 > (currentPacketSize - packetSize1 - 4)) {
-//						syslog(LOG_INFO, "increase buffer");
+//						LOGINFO( "increase buffer");
 						offset = currentPacketSize;
 						currentPacketSize = 4 + packetSize1 + packetSize2;
 						buf = (uint8_t *)realloc(buf, currentPacketSize);
@@ -525,7 +526,7 @@ uint8_t * Communicator::readUsbPacket(int &length, bool isInterrupt, unsigned in
 
 	}
     */
-//	syslog(LOG_ERR, "error reading USB PTP packets");
+//	LOGERR( "error reading USB PTP packets");
 	free(buf);
 	length = 0;
 	return nullptr;
@@ -555,15 +556,15 @@ bool Communicator::readPtpPacket(uint8_t *buf, int bufSize, int &length, bool in
 	length = 0;
 	int r, readBytes = 0;
 
-//	syslog(LOG_INFO,"readPtpPacket");
+//	LOGINFO("readPtpPacket");
 	while (true) {
 //                r = libusb_bulk_transfer(mHandle, ep, buf, bufSize, &readBytes, tOut);
 		if (interrupt) {
 			 r = libusb_interrupt_transfer(mHandle, ep, buf, epMax, &readBytes, tOut);
 			if (r == 0) {
-				syslog(LOG_INFO, "USB interrupt read result: %d  read bytes: %d", r, readBytes);
+				LOGINFO( "USB interrupt read result: %d  read bytes: %d", r, readBytes);
 				for(int i =0; i < readBytes; i++)
-					syslog(LOG_INFO, "byte %x", buf[i]);
+					LOGINFO( "byte %x", buf[i]);
 			}
 		}
 		else
@@ -576,7 +577,7 @@ bool Communicator::readPtpPacket(uint8_t *buf, int bufSize, int &length, bool in
 			} else {
 				retry++;
 				if (retry > 3) {
-					syslog(LOG_ERR, "Result is 0, read bytes %d", readBytes);
+					LOGERR( "Result is 0, read bytes %d", readBytes);
 					break;
 				}
 			}
@@ -584,7 +585,7 @@ bool Communicator::readPtpPacket(uint8_t *buf, int bufSize, int &length, bool in
 		if (r < 0) {
 			retry++;
 			if (retry > 5) {
-//				syslog(LOG_ERR, "No USB data after 5 retries");
+//				LOGERR( "No USB data after 5 retries");
 				break;
 			}
 		}
@@ -607,17 +608,17 @@ bool Communicator::openUsbDevice(uint16_t vendorId, uint16_t productId)
 
 		cnt = libusb_get_device_list(mCtx, &devs); //get the list of devices
 		if (cnt > 0) {
-			syslog(LOG_INFO, "USB Devices in");
+			LOGINFO( "USB Devices in");
 			ssize_t i = 0; //for iterating through the list
 			while(i < cnt) {
 				libusb_device *device = devs[i];
 				r = libusb_get_device_descriptor(device, &desc);
 				if (r == 0) {
-					syslog(LOG_INFO, "Checking device with vendorId: %04x  and productId: %04x", vendorId, productId);
+					LOGINFO( "Checking device with vendorId: %04x  and productId: %04x", vendorId, productId);
 					if ( (desc.idVendor == vendorId && desc.idProduct == productId) || (vendorId == 0 && productId == 0) ) {
-						syslog(LOG_INFO, "Trying to open device");
+						LOGINFO( "Trying to open device");
 						if (canOpenUsbImagingDevice(device, &desc)) {
-							syslog(LOG_INFO, "Device  open success");
+							LOGINFO( "Device  open success");
 							result = initUsbDevice(device);
 							break;
 						}
@@ -627,7 +628,7 @@ bool Communicator::openUsbDevice(uint16_t vendorId, uint16_t productId)
 			}
 		}
 		else
-			syslog(LOG_INFO, "Can't found USB devices");
+			LOGINFO( "Can't found USB devices");
 	}
 
 	libusb_free_device_list(devs, 1); //free the list, unref the devices in it
@@ -650,7 +651,7 @@ bool Communicator::initUsbDevice(libusb_device *device)
 	mDevice = device;
 	r = libusb_open(device, &mHandle);
 	if (r == 0 && mHandle != nullptr) {
-		syslog(LOG_INFO, "USB device opened");
+		LOGINFO( "USB device opened");
 		r = libusb_get_device_descriptor(mDevice, &desc);
 		if (r == 0) {
 				r = libusb_get_config_descriptor(mDevice, 0, &config);
@@ -669,18 +670,18 @@ bool Communicator::initUsbDevice(libusb_device *device)
 									if ((epdesc->bEndpointAddress == (LIBUSB_ENDPOINT_IN | LIBUSB_TRANSFER_TYPE_ISOCHRONOUS)) || (epdesc->bEndpointAddress == (LIBUSB_ENDPOINT_IN | LIBUSB_TRANSFER_TYPE_BULK))) {
 										readEp = epdesc->bEndpointAddress;
 										readMax = epdesc->wMaxPacketSize;
-										syslog(LOG_INFO, "Read endpoint adress: %d max pSize %d", readEp, epdesc->wMaxPacketSize);
+										LOGINFO( "Read endpoint adress: %d max pSize %d", readEp, epdesc->wMaxPacketSize);
 									}
 									if ((epdesc->bEndpointAddress == (LIBUSB_ENDPOINT_OUT | LIBUSB_TRANSFER_TYPE_ISOCHRONOUS)) || (epdesc->bEndpointAddress == (LIBUSB_ENDPOINT_OUT	| LIBUSB_TRANSFER_TYPE_BULK))) {
 										writeEp = epdesc->bEndpointAddress;
 										writeMax = epdesc->wMaxPacketSize;
-										syslog(LOG_INFO, "Write endpoint adress: %d max pSize %d", writeEp, epdesc->wMaxPacketSize);
+										LOGINFO( "Write endpoint adress: %d max pSize %d", writeEp, epdesc->wMaxPacketSize);
 									}
 									if (epdesc->bEndpointAddress == (LIBUSB_ENDPOINT_IN | LIBUSB_TRANSFER_TYPE_INTERRUPT))
         								{
 										interruptEp = epdesc->bEndpointAddress;
 										interruptMax = epdesc->wMaxPacketSize;
-										syslog(LOG_INFO, "Interrupt endpoint address: %d max pSize %d", interruptEp, epdesc->wMaxPacketSize);
+										LOGINFO( "Interrupt endpoint address: %d max pSize %d", interruptEp, epdesc->wMaxPacketSize);
 									}
 								}
 								result = claimInterface(readEp, readMax, writeEp, writeMax, interruptEp, interruptMax, i);
@@ -699,12 +700,12 @@ bool Communicator::initUsbDevice(libusb_device *device)
 					libusb_free_config_descriptor(config);
 				}
 				else
-					syslog(LOG_ERR, "Error opening USB device config descriptor: %d", r);
+					LOGERR( "Error opening USB device config descriptor: %d", r);
 		} else
-			syslog(LOG_ERR, "Failed to get device descriptor: %d", r);
+			LOGERR( "Failed to get device descriptor: %d", r);
 	}
 	else
-		syslog(LOG_ERR, "Error opening device");
+		LOGERR( "Error opening device");
 	}
 	return result;
 }
@@ -722,23 +723,23 @@ bool Communicator::claimInterface(uint8_t readEp, uint16_t readMax, uint8_t writ
 	mImagingInterface = interfaceNo;
 
 	if (libusb_kernel_driver_active(mHandle, 0) == 1) { //find out if kernel driver is attached
-		syslog(LOG_INFO, "Kernel driver active, trying to detach");
+		LOGINFO( "Kernel driver active, trying to detach");
 		if (libusb_detach_kernel_driver(mHandle, 0) == 0) //detach it
-			syslog(LOG_INFO, "Kernel driver detached");
+			LOGINFO( "Kernel driver detached");
 	}
 
 	if (mImagingInterface >= 0) {
 		r = libusb_claim_interface(mHandle, mImagingInterface); //claim imaging interface
 		if (r == 0) {
-			syslog(LOG_INFO, "USB interface claimed");
+			LOGINFO( "USB interface claimed");
 			//mIsInitialized = true;
 			return true;
 		}
 
-		syslog(LOG_ERR, "Unable to claim interface");
+		LOGERR( "Unable to claim interface");
 	}
 	else
-		syslog(LOG_ERR, "No interface was found");
+		LOGERR( "No interface was found");
 	closeUsbDevice();
 	return false;
 }
@@ -755,7 +756,7 @@ bool Communicator::canOpenUsbImagingDevice(libusb_device *dev, libusb_device_des
 	libusb_device_handle *deviceHandle;
 
 
-		syslog(LOG_INFO, "Number of possible configurations: %d Device Class: %d VendorID: %d, ProductID: %d",
+		LOGINFO( "Number of possible configurations: %d Device Class: %d VendorID: %d, ProductID: %d",
 				desc->bNumConfigurations, desc->bDeviceClass, desc->idVendor, desc->idProduct);
 
 		r = libusb_get_config_descriptor(dev, 0, &config);
@@ -768,22 +769,22 @@ bool Communicator::canOpenUsbImagingDevice(libusb_device *dev, libusb_device_des
 					break;
 
 				inter = &config->interface[i];
-				syslog(LOG_INFO, "Number of alternate settings:");
+				LOGINFO( "Number of alternate settings:");
 
 				int j = 0;
 				while (j < inter->num_altsetting) {
 					interdesc = &inter->altsetting[j];
 
-					syslog(LOG_INFO, "Interface class: %d Interface number: %d Number of endpoints: %d",
+					LOGINFO( "Interface class: %d Interface number: %d Number of endpoints: %d",
 							interdesc->bInterfaceClass, interdesc->bInterfaceNumber, interdesc->bNumEndpoints);
 
 					if (interdesc->bInterfaceClass == 6) {
-						syslog(LOG_INFO, "Found USB imaging device, get vendor and product");
+						LOGINFO( "Found USB imaging device, get vendor and product");
 						again = false;
 
 						r = libusb_open(dev, &deviceHandle);
 						if (r != 0) {
-							syslog(LOG_INFO, "Error opening USB imaging device: %d", r);
+							LOGINFO( "Error opening USB imaging device: %d", r);
 							break;
 						} else {
 							if (libusb_kernel_driver_active(deviceHandle, 0) == 0) { //find out if kernel driver is attached
@@ -800,7 +801,7 @@ bool Communicator::canOpenUsbImagingDevice(libusb_device *dev, libusb_device_des
 								}
 							}
 							else
-								syslog(LOG_INFO, "Kernel driver active");
+								LOGINFO( "Kernel driver active");
 						}
 						break;
 					}
@@ -815,14 +816,14 @@ bool Communicator::canOpenUsbImagingDevice(libusb_device *dev, libusb_device_des
 }
 void Communicator::closeUsbDevice()
 {
-	syslog(LOG_INFO, "Closing USB device");
+	LOGINFO( "Closing USB device");
 	int r;
 	if (mImagingInterface >= 0 && mHandle != nullptr) {
 		r = libusb_release_interface(mHandle, mImagingInterface);
 		if (r == 0)
-			syslog(LOG_INFO, "USB interface released");
+			LOGINFO( "USB interface released");
 		else
-			syslog(LOG_ERR, "Unable to release USB interface");
+			LOGERR( "Unable to release USB interface");
 		mImagingInterface = -1;
 	}
 	if (mHandle != nullptr) {
@@ -841,9 +842,9 @@ void Communicator::sendUsbDeviceList(uint32_t sessionId)
 
 		cnt = libusb_get_device_list(mCtx, &devs); //get the list of devices
 		if (cnt < 0) {
-			syslog(LOG_INFO, "Can't found USB devices");
+			LOGINFO( "Can't found USB devices");
 		}
-		syslog(LOG_INFO, "USB Devices in");
+		LOGINFO( "USB Devices in");
 		ssize_t i; //for iterating through the list
 		for (i = 0; i < cnt; i++) {
 			libusb_device *device = devs[i];
@@ -853,7 +854,7 @@ void Communicator::sendUsbDeviceList(uint32_t sessionId)
 				imgUsbDevices.insert(imgUsbDevices.begin(), imgUsbDevice);
 			}
 		}
-		syslog(LOG_INFO, "Imaging USB devices found: %lu", imgUsbDevices.size());
+		LOGINFO( "Imaging USB devices found: %lu", imgUsbDevices.size());
 	}
 
 	libusb_free_device_list(devs, 1); //free the list, unref the devices in it
@@ -907,11 +908,11 @@ bool Communicator::isUsbImagingDevice(libusb_device *dev, ImagingUsbDevice *imgU
 	r = libusb_get_device_descriptor(dev, &desc);
 
 	if (r < 0) {
-		syslog(LOG_ERR, "Failed to get device descriptor: %d", r);
+		LOGERR( "Failed to get device descriptor: %d", r);
 		return false;
 	}
 
-	syslog(LOG_INFO, "Number of possible configurations: %d Device Class: %d VendorID: %d, ProductID: %d", desc.bNumConfigurations, desc.bDeviceClass, desc.idVendor, desc.idProduct);
+	LOGINFO( "Number of possible configurations: %d Device Class: %d VendorID: %d, ProductID: %d", desc.bNumConfigurations, desc.bDeviceClass, desc.idVendor, desc.idProduct);
 
 	r = libusb_get_config_descriptor(dev, 0, &config);
 	if (r == 0) {
@@ -923,21 +924,21 @@ bool Communicator::isUsbImagingDevice(libusb_device *dev, ImagingUsbDevice *imgU
 			break;
 
 		inter = &config->interface[i];
-		syslog(LOG_INFO, "Number of alternate settings:");
+		LOGINFO( "Number of alternate settings:");
 
 		int j = 0;
 		while (j < inter->num_altsetting) {
 			interdesc = &inter->altsetting[j];
 
-			syslog(LOG_INFO, "Interface class: %d Interface number: %d Number of endpoints: %d", interdesc->bInterfaceClass, interdesc->bInterfaceNumber, interdesc->bNumEndpoints);
+			LOGINFO( "Interface class: %d Interface number: %d Number of endpoints: %d", interdesc->bInterfaceClass, interdesc->bInterfaceNumber, interdesc->bNumEndpoints);
 
 			if (interdesc->bInterfaceClass == 6) {
-				syslog(LOG_INFO, "Found USB imaging device, get vendor and product");
+				LOGINFO( "Found USB imaging device, get vendor and product");
 				again = false;
 
 				r = libusb_open(dev, &deviceHandle);
 				if (r != 0) {
-					syslog(LOG_INFO, "Error opening USB imaging device: %d", r);
+					LOGINFO( "Error opening USB imaging device: %d", r);
 					break;
 				} else {
 					if (libusb_kernel_driver_active(deviceHandle, 0) == 0) { //find out if kernel driver is attached
@@ -957,27 +958,27 @@ bool Communicator::isUsbImagingDevice(libusb_device *dev, ImagingUsbDevice *imgU
 
 							r = libusb_get_string_descriptor_ascii(deviceHandle, desc.iManufacturer, &(imgUsbDevice->iVendorName[0]), 255);
 							if (r <= 0)
-								syslog(LOG_ERR, "Error getting USB Vendor name: %d", r);
+								LOGERR( "Error getting USB Vendor name: %d", r);
 							r = libusb_get_string_descriptor_ascii(deviceHandle, desc.iProduct, &(imgUsbDevice->iProductName[0]), 255);
 							if (r <= 0)
-								syslog(LOG_ERR, "Error getting USB Product name: %d", r);
+								LOGERR( "Error getting USB Product name: %d", r);
 //							r = libusb_get_string_descriptor_ascii(deviceHandle, desc.iSerialNumber, &(imgUsbDevice.iSerial[0]), 255);
 //							if (r <= 0)
-//								syslog(LOG_ERR, "Error getting USB serial: %d", r);
+//								LOGERR( "Error getting USB serial: %d", r);
 
 							libusb_release_interface(deviceHandle, i);
 							libusb_close(deviceHandle);
 
-							syslog(LOG_INFO, "Device Manufacturer: %s", imgUsbDevice->iVendorName);
-							syslog(LOG_INFO, "Device Product: %s", imgUsbDevice->iProductName);
-//							syslog(LOG_INFO, "Device Serial: %s", imgUsbDevice.iSerial);
+							LOGINFO( "Device Manufacturer: %s", imgUsbDevice->iVendorName);
+							LOGINFO( "Device Product: %s", imgUsbDevice->iProductName);
+//							LOGINFO( "Device Serial: %s", imgUsbDevice.iSerial);
 //							uint32_t hash = getHash(&serial[0]);
-//							syslog(LOG_INFO, "Device Serial hash: %08x", hash);
+//							LOGINFO( "Device Serial hash: %08x", hash);
 							return true;
 						}
 					}
 					else
-						syslog(LOG_INFO, "Kernel driver active");
+						LOGINFO( "Kernel driver active");
 
 				}
 				break;
